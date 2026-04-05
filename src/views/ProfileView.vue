@@ -2,6 +2,7 @@
 import { ref, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { api } from '@/services/api'
 import AppField  from '@/components/ui/AppField.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal  from '@/components/ui/AppModal.vue'
@@ -14,36 +15,59 @@ const profileForm = ref({ name: auth.user?.name ?? '', email: auth.user?.email ?
 const pwForm      = ref({ current: '', newPass: '', confirm: '' })
 const showConfirm = ref(false)
 
-function saveProfile() {
+// ── Perfil ──────────────────────────────────────────────────────────
+async function saveProfile() {
   if (!profileForm.value.name || !profileForm.value.email) {
     showToast('Preencha todos os campos.', 'error'); return
   }
-  // Substitua por: PUT /users/me
-  auth.updateUser(profileForm.value)
-  showToast('Perfil atualizado!')
+  try {
+    // PUT /users/me  →  { id, name, email }
+    const res = await api.updateMe({
+      name:  profileForm.value.name,
+      email: profileForm.value.email,
+    })
+    auth.updateUser({ name: res.name, email: res.email })
+    showToast('Perfil atualizado!')
+  } catch (e) {
+    showToast(e?.message || 'Erro ao atualizar perfil.', 'error')
+  }
 }
 
-function savePassword() {
+// ── Senha ────────────────────────────────────────────────────────────
+async function savePassword() {
   if (!pwForm.value.current || !pwForm.value.newPass) {
     showToast('Preencha todos os campos.', 'error'); return
   }
   if (pwForm.value.newPass !== pwForm.value.confirm) {
     showToast('As senhas não coincidem.', 'error'); return
   }
-  // Substitua por: PATCH /users/me com campo password
-  pwForm.value = { current: '', newPass: '', confirm: '' }
-  showToast('Senha atualizada com sucesso!')
+  try {
+    // PATCH /users/me  com o campo password
+    await api.patchMe({ password: pwForm.value.newPass })
+    pwForm.value = { current: '', newPass: '', confirm: '' }
+    showToast('Senha atualizada com sucesso!')
+  } catch (e) {
+    showToast(e?.message || 'Erro ao atualizar senha.', 'error')
+  }
 }
 
+// ── Logout ───────────────────────────────────────────────────────────
 function logout() {
   auth.logout()
   router.push({ name: 'login' })
 }
 
-function deleteAccount() {
-  // Substitua por: DELETE /users/me
-  auth.logout()
-  router.push({ name: 'login' })
+// ── Excluir conta ────────────────────────────────────────────────────
+async function deleteAccount() {
+  try {
+    // DELETE /users/me  →  204 No Content
+    await api.deleteMe()
+    auth.logout()
+    router.push({ name: 'login' })
+  } catch (e) {
+    showConfirm.value = false
+    showToast(e?.message || 'Erro ao excluir conta.', 'error')
+  }
 }
 </script>
 

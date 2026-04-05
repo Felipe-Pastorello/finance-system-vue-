@@ -7,6 +7,12 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isLoggedIn = computed(() => !!token.value)
 
+  /** Salva token antecipadamente (necessário antes de chamar /users/me no login) */
+  function setToken(jwt) {
+    token.value = jwt
+    localStorage.setItem('ft_token', jwt)
+  }
+
   function login(userData, jwt) {
     token.value = jwt
     user.value  = userData
@@ -26,5 +32,5 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('ft_user', JSON.stringify(user.value))
   }
 
-  return { token, user, isLoggedIn, login, logout, updateUser }
+  return { token, user, isLoggedIn, setToken, login, logout, updateUser }
 })

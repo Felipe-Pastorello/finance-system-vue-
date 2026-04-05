@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, nextTick, watch } from 'vue'
+import { onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAccountsStore }     from '@/stores/accounts'
 import { useTransactionsStore } from '@/stores/transactions'
@@ -7,12 +7,13 @@ import { Chart, registerables } from 'chart.js'
 
 Chart.register(...registerables)
 
-const router = useRouter()
+const router            = useRouter()
 const accountsStore     = useAccountsStore()
 const transactionsStore = useTransactionsStore()
 
-const fmt = v => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-const accName = id => accountsStore.accounts.find(a => a.id === id)?.name ?? '—'
+const fmt     = v => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+// Usa accountBankName que vem direto da API
+const accName = tx => tx.accountBankName || accountsStore.accounts.find(a => a.id === tx.accountId)?.name || '—'
 
 let pie = null
 function initChart() {
@@ -34,7 +35,14 @@ function initChart() {
   })
 }
 
-onMounted(() => nextTick(initChart))
+onMounted(async () => {
+  // Carrega dados reais da API antes de inicializar o gráfico
+  await Promise.all([
+    accountsStore.fetchAll(),
+    transactionsStore.fetchAll(),
+  ])
+  nextTick(initChart)
+})
 </script>
 
 <template>
@@ -85,7 +93,7 @@ onMounted(() => nextTick(initChart))
             <tr v-for="tx in transactionsStore.recent" :key="tx.id">
               <td><span :class="tx.type === 'ENTRADA' ? 'badge bi' : 'badge be'">{{ tx.type === 'ENTRADA' ? '↑' : '↓' }} {{ tx.type }}</span></td>
               <td>{{ tx.description }}</td>
-              <td class="mu">{{ accName(tx.accountId) }}</td>
+              <td class="mu">{{ accName(tx) }}</td>
               <td class="mu">{{ tx.date }}</td>
               <td class="tr" :class="tx.type === 'ENTRADA' ? 'ai' : 'ae'">
                 {{ tx.type === 'ENTRADA' ? '+' : '-' }} R$ {{ fmt(tx.amount) }}
@@ -155,10 +163,4 @@ tr:hover td { background:rgba(255,255,255,.02); }
 .acc-name { font-weight:600; font-size:.9rem; }
 .acc-type { font-size:.75rem; color:var(--muted); }
 .acc-bal  { font-weight:600; color:var(--accent); font-size:.92rem; }
-
-.legend { display:flex; gap:14px; margin-top:12px; flex-wrap:wrap; }
-.legend-item { display:flex; align-items:center; gap:6px; font-size:.8rem; color:var(--muted); }
-.dot { display:inline-block; width:10px; height:10px; border-radius:50%; }
-.dot.green { background:var(--green); }
-.dot.red   { background:var(--red);   }
 </style>

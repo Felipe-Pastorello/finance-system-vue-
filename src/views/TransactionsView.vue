@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, inject } from 'vue'
+import { ref, computed, inject, onMounted } from 'vue'
 import { useTransactionsStore } from '@/stores/transactions'
 import { useAccountsStore }     from '@/stores/accounts'
 import AppModal  from '@/components/ui/AppModal.vue'
@@ -23,13 +23,14 @@ const filteredTx = computed(() => {
       const ma = !accFilter.value  || t.accountId == accFilter.value
       return ms && mt && ma
     })
-    .sort((a, b) => b.id - a.id)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
 })
 
 // Modal
 const showModal   = ref(false)
 const editingItem = ref(null)
-const form = ref({ type: 'DESPESA', description: '', amount: 0, accountId: null, date: '' })
+const loading     = ref(false)
+const form = ref({ type: 'DESPESA', description: '', amount: 0, accountId: null, date: '', category: '' })
 
 const typeOptions = [
   { value: 'ENTRADA', label: '↑ Entrada' },
@@ -39,36 +40,60 @@ const accountOptions = computed(() =>
   accStore.accounts.map(a => ({ value: a.id, label: a.name }))
 )
 
+// Carrega contas e transações reais ao montar a view
+onMounted(async () => {
+  try {
+    await Promise.all([accStore.fetchAll(), txStore.fetchAll()])
+  } catch (e) {
+    showToast('Erro ao carregar dados.', 'error')
+  }
+})
+
 function openModal(tx = null) {
   editingItem.value = tx
   const today = new Date().toISOString().slice(0, 10)
   form.value = tx
     ? { ...tx }
-    : { type: 'DESPESA', description: '', amount: 0, accountId: accStore.accounts[0]?.id, date: today }
+    : { type: 'DESPESA', description: '', amount: 0, accountId: accStore.accounts[0]?.id, date: today, category: '' }
   showModal.value = true
 }
 
-function save() {
+async function save() {
   if (!form.value.description || !form.value.amount) {
     showToast('Preencha todos os campos.', 'error'); return
   }
-  if (editingItem.value) {
-    txStore.update(editingItem.value.id, form.value)
-    showToast('Transação atualizada!')
-  } else {
-    txStore.add({ ...form.value, amount: Number(form.value.amount) })
-    showToast('Transação registrada!')
+  loading.value = true
+  try {
+    if (editingItem.value) {
+      // PUT /transactions/{id}
+      await txStore.update(editingItem.value.id, { ...form.value, amount: Number(form.value.amount) })
+      showToast('Transação atualizada!')
+    } else {
+      // POST /transactions
+      await txStore.add({ ...form.value, amount: Number(form.value.amount) })
+      showToast('Transação registrada!')
+    }
+    showModal.value = false
+  } catch (e) {
+    showToast(e?.message || 'Erro ao salvar transação.', 'error')
+  } finally {
+    loading.value = false
   }
-  showModal.value = false
 }
 
-function remove(id) {
-  txStore.remove(id)
-  showToast('Transação removida.')
+async function remove(id) {
+  try {
+    // DELETE /transactions/{id}
+    await txStore.remove(id)
+    showToast('Transação removida.')
+  } catch (e) {
+    showToast(e?.message || 'Erro ao remover transação.', 'error')
+  }
 }
 
 const fmt     = v => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-const accName = id => accStore.accounts.find(a => a.id === id)?.name ?? '—'
+// Usa accountBankName que vem direto da API, com fallback para busca no store
+const accName = tx => tx.accountBankName || accStore.accounts.find(a => a.id === tx.accountId)?.name || '—'
 </script>
 
 <template>
@@ -120,7 +145,7 @@ const accName = id => accStore.accounts.find(a => a.id === id)?.name ?? '—'
               </span>
             </td>
             <td>{{ tx.description }}</td>
-            <td class="mu">{{ accName(tx.accountId) }}</td>
+            <td class="mu">{{ accName(tx) }}</td>
             <td class="mu">{{ tx.date }}</td>
             <td class="tr" :class="tx.type === 'ENTRADA' ? 'ai' : 'ae'">
               {{ tx.type === 'ENTRADA' ? '+' : '-' }} R$ {{ fmt(tx.amount) }}
@@ -147,10 +172,13 @@ const accName = id => accStore.accounts.find(a => a.id === id)?.name ?? '—'
       <AppField label="Valor (R$)"  v-model="form.amount" type="number" placeholder="0,00" />
       <AppField label="Conta"       v-model="form.accountId"   :options="accountOptions" />
       <AppField label="Data"        v-model="form.date"   type="date" />
+      <AppField label="Categoria (opcional)" v-model="form.category" placeholder="Ex: Alimentação" />
 
       <div class="modal-footer">
         <AppButton variant="ghost"   @click="showModal = false">Cancelar</AppButton>
-        <AppButton variant="primary" @click="save">{{ editingItem ? 'Salvar' : 'Registrar' }}</AppButton>
+        <AppButton variant="primary" :disabled="loading" @click="save">
+          {{ loading ? 'Salvando...' : (editingItem ? 'Salvar' : 'Registrar') }}
+        </AppButton>
       </div>
     </AppModal>
   </div>

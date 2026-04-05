@@ -1,5 +1,5 @@
 <script setup>
-import { ref, inject } from 'vue'
+import { ref, inject, onMounted } from 'vue'
 import { useAccountsStore } from '@/stores/accounts'
 import AppModal  from '@/components/ui/AppModal.vue'
 import AppField  from '@/components/ui/AppField.vue'
@@ -10,16 +10,26 @@ const showToast = inject('showToast')
 
 const showModal   = ref(false)
 const editingItem = ref(null)
+const loading     = ref(false)
 const form = ref({ name: '', type: 'CORRENTE', balance: 0 })
 
 const typeOptions = [
-  { value: 'CORRENTE',    label: 'Conta Corrente' },
-  { value: 'POUPANÇA',    label: 'Poupança'        },
-  { value: 'INVESTIMENTO',label: 'Investimento'    },
-  { value: 'CARTEIRA',    label: 'Carteira'        },
+  { value: 'CORRENTE',     label: 'Conta Corrente' },
+  { value: 'POUPANÇA',     label: 'Poupança'        },
+  { value: 'INVESTIMENTO', label: 'Investimento'    },
+  { value: 'CARTEIRA',     label: 'Carteira'        },
 ]
 
 const fmt = v => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+
+// Carrega contas reais da API ao montar a view
+onMounted(async () => {
+  try {
+    await store.fetchAll()
+  } catch (e) {
+    showToast('Erro ao carregar contas.', 'error')
+  }
+})
 
 function openModal(account = null) {
   editingItem.value = account
@@ -29,21 +39,35 @@ function openModal(account = null) {
   showModal.value = true
 }
 
-function save() {
+async function save() {
   if (!form.value.name) { showToast('Informe o nome da conta.', 'error'); return }
-  if (editingItem.value) {
-    store.update(editingItem.value.id, form.value)
-    showToast('Conta atualizada!')
-  } else {
-    store.add(form.value)
-    showToast('Conta criada!')
+  loading.value = true
+  try {
+    if (editingItem.value) {
+      // PUT /accounts/{id}
+      await store.update(editingItem.value.id, form.value)
+      showToast('Conta atualizada!')
+    } else {
+      // POST /accounts
+      await store.add(form.value)
+      showToast('Conta criada!')
+    }
+    showModal.value = false
+  } catch (e) {
+    showToast(e?.message || 'Erro ao salvar conta.', 'error')
+  } finally {
+    loading.value = false
   }
-  showModal.value = false
 }
 
-function remove(id) {
-  store.remove(id)
-  showToast('Conta removida.')
+async function remove(id) {
+  try {
+    // DELETE /accounts/{id}
+    await store.remove(id)
+    showToast('Conta removida.')
+  } catch (e) {
+    showToast(e?.message || 'Erro ao remover conta.', 'error')
+  }
 }
 </script>
 
@@ -88,7 +112,9 @@ function remove(id) {
 
       <div class="modal-footer">
         <AppButton variant="ghost" @click="showModal = false">Cancelar</AppButton>
-        <AppButton variant="primary" @click="save">{{ editingItem ? 'Salvar' : 'Criar conta' }}</AppButton>
+        <AppButton variant="primary" :disabled="loading" @click="save">
+          {{ loading ? 'Salvando...' : (editingItem ? 'Salvar' : 'Criar conta') }}
+        </AppButton>
       </div>
     </AppModal>
   </div>

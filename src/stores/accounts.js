@@ -1,27 +1,57 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { api } from '@/services/api'
 
 export const useAccountsStore = defineStore('accounts', () => {
-  // Mock data – substitua pelas chamadas reais à API
-  const accounts = ref([
-    { id: 1, name: 'Nubank',            type: 'CORRENTE',    balance: 3200.00 },
-    { id: 2, name: 'Poupança Bradesco',  type: 'POUPANÇA',    balance: 8750.50 },
-    { id: 3, name: 'Carteira',           type: 'CARTEIRA',    balance: 320.00  },
-  ])
+  const accounts = ref([])
 
-  const totalBalance = computed(() => accounts.value.reduce((s, a) => s + a.balance, 0))
+  const totalBalance = computed(() =>
+    accounts.value.reduce((s, a) => s + Number(a.balance), 0)
+  )
 
-  function add(account) {
-    const id = Math.max(0, ...accounts.value.map(a => a.id)) + 1
-    accounts.value.push({ id, ...account })
+  /** Converte AccountResponse (API) → modelo interno do frontend */
+  function normalize(a) {
+    return {
+      id:      a.id,
+      name:    a.bankName,     // API usa bankName   → frontend usa name
+      type:    a.accountType,  // API usa accountType → frontend usa type
+      balance: Number(a.balance),
+    }
   }
 
-  function update(id, data) {
+  // GET /accounts  ─────────────────────────────────────────────────────
+  async function fetchAll() {
+    const res = await api.getAccounts()
+    accounts.value = res.content.map(normalize)
+  }
+
+  // POST /accounts  ─────────────────────────────────────────────────────
+  // Swagger body: { bankName, accountType, balance }
+  async function add(account) {
+    const res = await api.createAccount({
+      bankName:    account.name,
+      accountType: account.type,
+      balance:     Number(account.balance),
+    })
+    accounts.value.push(normalize(res))
+  }
+
+  // PUT /accounts/{id}  ─────────────────────────────────────────────────
+  // Swagger body: { bankName, accountType, balance }
+  async function update(id, data) {
+    const res = await api.updateAccount(id, {
+      bankName:    data.name,
+      accountType: data.type,
+      balance:     Number(data.balance),
+    })
     const idx = accounts.value.findIndex(a => a.id === id)
-    if (idx !== -1) accounts.value[idx] = { ...accounts.value[idx], ...data }
+    if (idx !== -1) accounts.value[idx] = normalize(res)
   }
 
-  function remove(id) {
+  // DELETE /accounts/{id}  ──────────────────────────────────────────────
+  // Retorna 204 sem body — api.js já lida com isso via res.text()
+  async function remove(id) {
+    await api.deleteAccount(id)
     accounts.value = accounts.value.filter(a => a.id !== id)
   }
 
@@ -29,5 +59,5 @@ export const useAccountsStore = defineStore('accounts', () => {
     return accounts.value.find(a => a.id === id)
   }
 
-  return { accounts, totalBalance, add, update, remove, getById }
+  return { accounts, totalBalance, fetchAll, add, update, remove, getById }
 })

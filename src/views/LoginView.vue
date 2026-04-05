@@ -2,15 +2,17 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { api } from '@/services/api'
 import AuthLayout from '@/components/layout/AuthLayout.vue'
-import AppField from '@/components/ui/AppField.vue'
-import AppButton from '@/components/ui/AppButton.vue'
+import AppField   from '@/components/ui/AppField.vue'
+import AppButton  from '@/components/ui/AppButton.vue'
 
-const router = useRouter()
-const auth   = useAuthStore()
+const router  = useRouter()
+const auth    = useAuthStore()
 
-const form  = ref({ email: '', password: '' })
-const error = ref('')
+const form    = ref({ email: '', password: '' })
+const error   = ref('')
+const loading = ref(false)
 
 const pills = [
   { text: 'Gerencie suas <strong>contas bancárias</strong>' },
@@ -18,15 +20,32 @@ const pills = [
   { text: 'Segurança com <strong>JWT + BCrypt</strong>'     },
 ]
 
-function submit() {
+async function submit() {
   error.value = ''
   if (!form.value.email || !form.value.password) {
     error.value = 'Preencha e-mail e senha.'
     return
   }
-  // Simula login – substitua pela chamada real: POST /auth/login
-  auth.login({ name: 'João Silva', email: form.value.email }, 'mock-jwt-token')
-  router.push({ name: 'dashboard' })
+  loading.value = true
+  try {
+    // 1. POST /auth/login  →  { token }
+    const loginRes = await api.login(form.value.email, form.value.password)
+
+    // 2. Salva o token antes de chamar /users/me (que precisa do Bearer)
+    auth.setToken(loginRes.token)
+
+    // 3. GET /users/me  →  { id, name, email }
+    const userRes = await api.getMe()
+
+    // 4. Persiste sessão completa
+    auth.login(userRes, loginRes.token)
+    router.push({ name: 'dashboard' })
+  } catch (e) {
+    error.value = e?.message || 'E-mail ou senha inválidos.'
+    auth.logout()            // limpa token parcial se algo falhou
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -40,8 +59,8 @@ function submit() {
     <AppField label="E-mail"  type="email"    v-model="form.email"    placeholder="joao@email.com" />
     <AppField label="Senha"   type="password" v-model="form.password" placeholder="••••••••" />
 
-    <AppButton variant="primary" :full="true" size="lg" @click="submit">
-      Entrar
+    <AppButton variant="primary" :full="true" size="lg" :disabled="loading" @click="submit">
+      {{ loading ? 'Entrando...' : 'Entrar' }}
     </AppButton>
 
     <p class="switch">
